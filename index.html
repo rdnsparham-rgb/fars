@@ -1,182 +1,314 @@
-<!-- save as sign-and-publish.html and host on GitHub Pages or any static host -->
+<!-- signature-factory.html
+   یک صفحهٔ تک‌فایلی برای تولید انواع امضاها و گواهی‌ها در مرورگر.
+   کتابخانه‌ها: tweetnacl (Ed25519), openpgp (PGP), forge (RSA/ECDSA/X.509)
+-->
 <!doctype html>
 <html lang="fa">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>تولید امضای دیجیتال و ارسال به GitHub</title>
+<title>Signature & Certificate Factory</title>
 <style>
-  :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;}
-  body{max-width:900px;margin:28px auto;padding:18px;background:#f7f7fb;border-radius:12px;color:#111}
-  h1{font-size:20px;margin-bottom:6px}
-  .card{background:white;padding:14px;border-radius:10px;box-shadow:0 6px 20px rgba(20,20,50,0.06);margin-bottom:12px}
+  body{font-family:system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; padding:18px; max-width:980px;margin:20px auto;color:#111;}
+  .card{background:#fff;padding:16px;border-radius:12px;box-shadow:0 6px 18px rgba(16,24,40,0.06);margin-bottom:12px}
+  h1{font-size:20px;margin:0 0 8px}
   label{display:block;margin-top:8px;font-weight:600}
-  textarea, input[type=text], input[type=password]{width:100%;padding:8px;margin-top:6px;border:1px solid #e2e6ef;border-radius:8px;font-size:14px}
-  button{margin-top:10px;padding:10px 14px;border-radius:8px;border:0;background:#2b6df6;color:white;font-weight:600;cursor:pointer}
-  small{color:#555}
-  pre{white-space:pre-wrap;background:#f3f6ff;padding:10px;border-radius:8px;overflow:auto}
+  select,input,textarea,button{width:100%;padding:10px;margin-top:8px;border-radius:8px;border:1px solid #e6e9f2;font-size:14px}
   .row{display:flex;gap:8px}
   .col{flex:1}
+  pre{background:#f4f7ff;padding:10px;border-radius:8px;overflow:auto}
   .muted{color:#666;font-size:13px}
+  button.primary{background:#2563eb;color:white;border:0;padding:10px;border-radius:8px;cursor:pointer}
+  small.warn{color:#b45309}
 </style>
 </head>
 <body>
   <div class="card">
-    <h1>تولید امضا (Ed25519) در مرورگر و ارسال به GitHub</h1>
-    <p class="muted">کلید خصوصی در مرورگر تولید می‌شود و هیچ‌وقت به سرور ارسال نمی‌شود مگر خودتان صریحاً بخواهید. برای انتشار روی GitHub از Gist یا api استفاده کنید (توکن لازم است).</p>
+    <h1>Signature & Certificate Factory</h1>
+    <p class="muted">از منوی زیر نوع امضا یا گواهی را انتخاب کن. کلیدها و امضاها در مرورگر تولید می‌شوند؛ فقط وقتی خواستی دانلود یا منتشر کن.</p>
   </div>
 
   <div class="card">
-    <label>پیغام / فایل (متن) برای امضا</label>
-    <textarea id="message" rows="4">این یک پیام تست است — امضا تولید شده توسط سایت.</textarea>
+    <label>نوع امضا / گواهی</label>
+    <select id="type">
+      <option value="ed25519">Ed25519 (signature)</option>
+      <option value="rsa">RSA (2048/4096 signature & X.509)</option>
+      <option value="ecdsa">ECDSA (P-256) signature & X.509</option>
+      <option value="pgp">OpenPGP (PGP keypair)</option>
+      <option value="x509-self">X.509 self-signed (RSA or ECDSA)</option>
+      <option value="csr">CSR (Certificate Signing Request)</option>
+    </select>
+
+    <label>پارامترها (اختیاری)</label>
+    <div id="params">
+      <label>برای RSA: اندازه‌کلید (bits) — پیش‌فرض 2048</label>
+      <input id="rsa-bits" type="text" value="2048" />
+
+      <label>برای پیام/فایل (متن) که امضا شود</label>
+      <textarea id="message" rows="4">این یک پیام تست است.</textarea>
+
+      <label>برای X.509 / CSR: Common Name (CN)</label>
+      <input id="cn" type="text" value="example.local" />
+      <label>برای X.509: مدت اعتبار (روز)</label>
+      <input id="days" type="text" value="365" />
+    </div>
 
     <div class="row" style="margin-top:10px">
-      <div class="col">
-        <button id="gen">تولید کلید جدید</button>
-      </div>
-      <div class="col">
-        <button id="sign" disabled>امضا کن</button>
-      </div>
+      <div class="col"><button id="generate" class="primary">تولید</button></div>
+      <div class="col"><button id="downloadAll">دانلود همه فایل‌ها</button></div>
     </div>
 
     <div style="margin-top:12px">
-      <label>کلید عمومی (Base64)</label>
-      <pre id="pub" aria-live="polite">—</pre>
-
-      <label>کلید خصوصی (Base64) — فقط اگر می‌خواهی ذخیره کنی</label>
-      <pre id="priv" aria-live="polite">—</pre>
-
-      <label>امضا (Base64)</label>
-      <pre id="sig" aria-live="polite">—</pre>
+      <label>خروجی‌ها</label>
+      <pre id="output">هیچ خروجی‌ای وجود ندارد.</pre>
     </div>
   </div>
 
   <div class="card">
-    <h3>انتشار روی GitHub</h3>
-    <p class="muted">برای انتشار باید توکن GitHub (با scope: gist یا repo) به‌صورت دستی وارد شود. شما می‌توانید OAuth2 پیاده کنید تا کاربر بدون وارد کردن توکن عمل کند.</p>
-
-    <label>توکن شخصی GitHub (یا خالی بگذار برای فقط دانلود محلی)</label>
+    <h3>انتشار به GitHub Gist (اختیاری)</h3>
+    <small class="muted">اگر می‌خواهی خروجی را منتشر کنی، توکن GitHub (با scope: gist) را وارد کن.</small>
     <input id="token" type="password" placeholder="ghp_..." />
-
-    <div class="row">
-      <div class="col">
-        <button id="publish-gist" disabled>ایجاد Gist با کلید عمومی و امضا</button>
-      </div>
-      <div class="col">
-        <button id="download-zip" disabled>دانلود ZIP از کلید و امضا</button>
-      </div>
+    <div class="row" style="margin-top:8px">
+      <div class="col"><button id="publish" disabled>انتشار Gist</button></div>
+      <div class="col"><button id="verify" disabled">بررسی امضا / گواهی</button></div>
     </div>
-
-    <div id="status" style="margin-top:10px" class="muted"></div>
+    <div id="status" class="muted" style="margin-top:8px"></div>
   </div>
 
 <script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tweetnacl-util@0.15.1/nacl-util.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/openpgp/5.5.0/openpgp.min.js"></script>
+
 <script>
-  // Helper utilities
-  const u8ToB64 = (u8) => btoa(String.fromCharCode(...u8));
-  const b64ToU8 = (b64) => new Uint8Array(atob(b64).split('').map(c=>c.charCodeAt(0)));
-  const u8ToHex = (u8) => Array.from(u8).map(b=>b.toString(16).padStart(2,'0')).join('');
+(async()=>{
 
-  let keyPair = null;
-  const el = {
-    gen: document.getElementById('gen'),
-    sign: document.getElementById('sign'),
-    message: document.getElementById('message'),
-    pub: document.getElementById('pub'),
-    priv: document.getElementById('priv'),
-    sig: document.getElementById('sig'),
-    token: document.getElementById('token'),
-    publishGist: document.getElementById('publish-gist'),
-    downloadZip: document.getElementById('download-zip'),
-    status: document.getElementById('status')
+const $ = id => document.getElementById(id);
+const out = $('output');
+const status = $('status');
+
+function log(...a){ out.textContent = a.join(' ') + "\n\n" + out.textContent; }
+function u8ToB64(u8){ return btoa(String.fromCharCode(...u8)); }
+function b64ToU8(b64){ return new Uint8Array(atob(b64).split('').map(c=>c.charCodeAt(0))); }
+
+const typeSel = $('type');
+const genBtn = $('generate');
+const downloadAll = $('downloadAll');
+const publishBtn = $('publish');
+const verifyBtn = $('verify');
+
+let lastArtifacts = {}; // holds generated outputs
+
+// Helpers to download a text file
+function downloadText(filename, text){
+  const a = document.createElement('a');
+  const blob = new Blob([text], {type:'text/plain;charset=utf-8'});
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+}
+
+function enablePublishIfReady(){
+  publishBtn.disabled = !lastArtifacts || Object.keys(lastArtifacts).length===0;
+  verifyBtn.disabled = publishBtn.disabled;
+}
+
+// 1) Ed25519
+function genEd25519(message){
+  const kp = nacl.sign.keyPair();
+  const pub = u8ToB64(kp.publicKey);
+  const priv = u8ToB64(kp.secretKey.slice(0,32));
+  const msgU8 = nacl.util.decodeUTF8(message);
+  const sig = nacl.sign.detached(msgU8, kp.secretKey);
+  const sigB64 = u8ToB64(sig);
+  const outp = {
+    type: 'ed25519',
+    public_b64: pub,
+    private_b64: priv,
+    message: message,
+    signature_b64: sigB64
   };
+  return outp;
+}
 
-  el.gen.addEventListener('click', ()=>{
-    // Generate Ed25519 keypair (tweetnacl uses nacl.sign.keyPair())
-    keyPair = nacl.sign.keyPair();
-    const pubB64 = u8ToB64(keyPair.publicKey);
-    const privB64 = u8ToB64(keyPair.secretKey.slice(0,32)); // first 32 bytes is private seed
-    el.pub.textContent = pubB64;
-    el.priv.textContent = privB64 + "\\n\\n🔐 (نگهداری امن فراموش نشود)";
-    el.sign.disabled = false;
-    el.publishGist.disabled = true;
-    el.downloadZip.disabled = true;
-    el.sig.textContent = "—";
-    el.status.textContent = "کلید جدید ساخته شد. حالا می‌توانید پیام را امضا کنید.";
+// 2) RSA / X.509 with Forge (in-browser)
+function genRSA(bits=2048){
+  log('تولید کلید RSA ('+bits+' بیت)... ممکن است چند ثانیه طول بکشد');
+  const keypair = forge.pki.rsa.generateKeyPair({bits: parseInt(bits,10), e: 0x10001});
+  const pemPriv = forge.pki.privateKeyToPem(keypair.privateKey);
+  const pemPub = forge.pki.publicKeyToPem(keypair.publicKey);
+  return {privatePem: pemPriv, publicPem: pemPub, keypair};
+}
+
+function signMessageRSA(privateKeyPem, message){
+  const priv = forge.pki.privateKeyFromPem(privateKeyPem);
+  const md = forge.md.sha256.create();
+  md.update(message, 'utf8');
+  const sig = priv.sign(md);
+  return btoa(sig);
+}
+
+// X.509 self-signed
+function genX509Self({keypair, cn, days}){
+  const cert = forge.pki.createCertificate();
+  cert.publicKey = keypair.publicKey;
+  cert.serialNumber = (Math.floor(Math.random()*1e16)).toString(16);
+  const now = new Date();
+  cert.validity.notBefore = now;
+  cert.validity.notAfter = new Date(now.getTime() + (parseInt(days,10)||365)*24*60*60*1000);
+  const attrs = [{name:'commonName', value:cn}];
+  cert.setSubject(attrs);
+  cert.setIssuer(attrs);
+  cert.setExtensions([ {name:'basicConstraints', cA:true}, {name:'keyUsage', keyCertSign:true, digitalSignature:true, keyEncipherment:true} ]);
+  cert.sign(keypair.privateKey, forge.md.sha256.create());
+  const pemCert = forge.pki.certificateToPem(cert);
+  return pemCert;
+}
+
+// CSR generation
+function genCSR({keypair, cn}){
+  const csr = forge.pki.createCertificationRequest();
+  csr.publicKey = keypair.publicKey;
+  csr.setSubject([{name:'commonName', value:cn}]);
+  csr.sign(keypair.privateKey, forge.md.sha256.create());
+  const pem = forge.pki.certificationRequestToPem(csr);
+  return pem;
+}
+
+// PGP
+async function genPGP(message){
+  const userId = {name:'User', email:'user@example.com'};
+  const {privateKey, publicKey} = await openpgp.generateKey({
+    type: 'rsa',
+    rsaBits: 2048,
+    userIDs: [userId],
+    format: 'armored'
   });
-
-  el.sign.addEventListener('click', ()=>{
-    if(!keyPair){ alert('ابتدا کلید بسازید.'); return; }
-    const msgStr = el.message.value || "";
-    const msgU8 = nacl.util.decodeUTF8(msgStr);
-    const signed = nacl.sign(msgU8, keyPair.secretKey);
-    const signature = signed.slice(0,64); // 64-byte signature
-    const sigB64 = u8ToB64(signature);
-    el.sig.textContent = sigB64;
-    el.publishGist.disabled = false;
-    el.downloadZip.disabled = false;
-    el.status.textContent = "پیغام امضا شد. می‌توانید آن را منتشر یا دانلود کنید.";
+  // sign message
+  const privKeyObj = await openpgp.readPrivateKey({armoredKey: privateKey});
+  const signed = await openpgp.sign({
+    message: await openpgp.createMessage({text: message}),
+    signingKeys: privKeyObj,
+    detached: true
   });
+  return {privateKey, publicKey, signature: signed}; // signature armored detached
+}
 
-  // Create a gist with public key + signature + message
-  el.publishGist.addEventListener('click', async ()=>{
-    const token = el.token.value.trim();
-    if(!token){ if(!confirm("شما توکن GitHub وارد نکردید. می‌خواهید Gist را به‌صورت ناشناس (غیرممکن) ایجاد کنید؟ (برای ایجاد Gist نیاز به توکن دارید)")) return; }
-    if(!keyPair || el.sig.textContent==="—"){ alert('ابتدا پیام را امضا کنید.'); return; }
+// ECDSA (P-256) via Forge
+function genECDSA(){
+  const keys = forge.pki.ec.generateKeyPair({namedCurve: 'P-256'});
+  const privPem = forge.pki.privateKeyToPem(keys.privateKey);
+  const pubPem = forge.pki.publicKeyToPem(keys.publicKey);
+  return {privatePem: privPem, publicPem: pubPem, keypair: keys};
+}
 
-    el.status.textContent = "در حال ارسال به GitHub...";
-    const body = {
-      description: "Public key + signature generated on-site",
-      public: true,
-      files: {
-        "public_key.b64": { content: el.pub.textContent },
-        "signature.b64": { content: el.sig.textContent },
-        "message.txt": { content: el.message.value }
-      }
-    };
+genBtn.addEventListener('click', async ()=>{
+  out.textContent = 'در حال تولید...';
+  const t = typeSel.value;
+  const message = $('message').value || '';
+  const cn = $('cn').value || 'example.local';
+  const days = $('days').value || '365';
+  const rsaBits = $('rsa-bits').value || '2048';
 
-    try{
-      const resp = await fetch("https://api.github.com/gists", {
-        method: "POST",
-        headers: {
-          "Content-Type":"application/json",
-          "Authorization": token ? ("token " + token) : undefined
-        },
-        body: JSON.stringify(body)
-      });
-      const data = await resp.json();
-      if(resp.ok){
-        el.status.innerHTML = "Gist ساخته شد: <a href='"+data.html_url+"' target=_blank>"+data.html_url+"</a>";
+  lastArtifacts = {};
+  try{
+    if(t==='ed25519'){
+      const res = genEd25519(message);
+      lastArtifacts = res;
+      log('Ed25519 ساخته شد. کلید عمومی و امضا در خروجی.');
+    } else if(t==='rsa'){
+      const keys = genRSA(rsaBits);
+      const sig = signMessageRSA(keys.privatePem, message);
+      lastArtifacts = {type:'rsa', privatePem: keys.privatePem, publicPem: keys.publicPem, message, signature_b64:sig};
+      log('RSA keys ساخته شد و پیام امضا شد.');
+    } else if(t==='ecdsa'){
+      const keys = genECDSA();
+      // sign not implemented for ECDSA (can be added) — but we provide keys
+      lastArtifacts = {type:'ecdsa', privatePem: keys.privatePem, publicPem: keys.publicPem};
+      log('ECDSA (P-256) کلیدها ساخته شد.');
+    } else if(t==='x509-self'){
+      // default RSA for key generation
+      const keys = genRSA(rsaBits);
+      const pemCert = genX509Self({keypair: keys.keypair, cn, days});
+      lastArtifacts = {type:'x509-self', privatePem: keys.privatePem, publicPem: keys.publicPem, certPem: pemCert};
+      log('X.509 self-signed ساخته شد.');
+    } else if(t==='csr'){
+      const keys = genRSA(rsaBits);
+      const csrPem = genCSR({keypair: keys.keypair, cn});
+      lastArtifacts = {type:'csr', privatePem: keys.privatePem, publicPem: keys.publicPem, csrPem};
+      log('CSR ساخته شد. می‌توانید آن را برای CA بفرستید یا با CA خودتان امضا کنید.');
+    } else if(t==='pgp'){
+      log('در حال تولید کلید PGP... (شاید چند ثانیه طول بکشد)');
+      const res = await genPGP(message);
+      lastArtifacts = {type:'pgp', privateArmored: res.privateKey, publicArmored: res.publicKey, signatureArmored: res.signature};
+      log('PGP keys و امضای detached ساخته شد.');
+    }
+
+    // show artifacts in readable form
+    let summary = '';
+    for(const k in lastArtifacts){
+      if(typeof lastArtifacts[k] === 'string' && lastArtifacts[k].length < 2000){
+        summary += `${k}:\n${lastArtifacts[k]}\n\n`;
+      } else if(typeof lastArtifacts[k] === 'string' && lastArtifacts[k].length >= 2000){
+        // long pem -> show header only + offer download
+        const head = lastArtifacts[k].slice(0,200) + '... (long)';
+        summary += `${k}: (long content, دانلود یا انتشار موجود)\n${head}\n\n`;
       } else {
-        el.status.textContent = "خطا هنگام ساخت Gist: " + (data.message || resp.status);
+        summary += `${k}: [object]\n\n`;
       }
-    }catch(err){
-      el.status.textContent = "خطا شبکه: " + err;
     }
-  });
+    out.textContent = summary;
+    enablePublishIfReady();
+  }catch(err){
+    out.textContent = 'خطا هنگام تولید: ' + err;
+    console.error(err);
+  }
+});
 
-  // Download ZIP (simple: create files and zip using JSZip or offer separate downloads)
-  el.downloadZip.addEventListener('click', async ()=>{
-    if(!keyPair || el.sig.textContent==="—"){ alert('ابتدا پیام را امضا کنید.'); return; }
-    // Create a small zip using plain blobs (no external lib) => create a multi-file .zip is complex,
-    // here we'll just create a single .tar-like blob as .zip may be heavy. Simpler: offer individual downloads.
-    function dl(filename, text){
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([text], {type:'text/plain'}));
-      a.download = filename;
-      a.click();
+// download all available artifacts
+downloadAll.addEventListener('click', ()=>{
+  if(!lastArtifacts || Object.keys(lastArtifacts).length===0){ alert('ابتدا تولید کن'); return; }
+  for(const k in lastArtifacts){
+    let fname = k + '.txt';
+    let content = lastArtifacts[k];
+    if(k.endsWith('Pem') || k.toLowerCase().includes('armored') || k.toLowerCase().includes('pem') || k.toLowerCase().includes('csr') || k.toLowerCase().includes('cert')){
+      fname = k + '.pem';
     }
-    dl("public_key.b64.txt", el.pub.textContent);
-    dl("private_key.b64.txt", el.priv.textContent.split("\\n")[0]);
-    dl("signature.b64.txt", el.sig.textContent);
-    dl("message.txt", el.message.value);
-    el.status.textContent = "فایل‌ها برای دانلود آماده شدند (چهار دانلود جداگانه).";
-  });
+    if(typeof content === 'object') content = JSON.stringify(content, null, 2);
+    downloadText(fname, content);
+  }
+  status.textContent = 'فایل‌ها آمادهٔ دانلود شدند.';
+});
 
-  // UX: enable publish only after signature
-  el.token.addEventListener('input', ()=>{ /* optional: nothing */ });
+// publish to gist
+publishBtn.addEventListener('click', async ()=>{
+  const token = $('token').value.trim();
+  if(!token){ alert('برای انتشار باید توکن GitHub (scope: gist) وارد کنید'); return; }
+  if(!lastArtifacts || Object.keys(lastArtifacts).length===0){ alert('ابتدا تولید کن'); return; }
+  const files = {};
+  for(const k in lastArtifacts){
+    let name = k + '.txt';
+    if(k.toLowerCase().includes('pem') || k.toLowerCase().includes('armored') || k.toLowerCase().includes('csr') || k.toLowerCase().includes('cert')) name = k + '.pem';
+    files[name] = {content: typeof lastArtifacts[k] === 'string' ? lastArtifacts[k] : JSON.stringify(lastArtifacts[k], null, 2)};
+  }
+  status.textContent = 'در حال ارسال به GitHub...';
+  try{
+    const resp = await fetch('https://api.github.com/gists', {method:'POST', headers:{'Authorization':'token '+token,'Content-Type':'application/json'}, body: JSON.stringify({public:true, description:'Generated by Signature Factory', files})});
+    const data = await resp.json();
+    if(resp.ok){
+      status.innerHTML = 'Gist ساخته شد: <a href="'+data.html_url+'" target=_blank>'+data.html_url+'</a>';
+    } else {
+      status.textContent = 'خطا: ' + (data.message || resp.status);
+    }
+  }catch(e){
+    status.textContent = 'خطا شبکه: ' + e;
+  }
+});
 
+// enable publish when token input changed
+$('token').addEventListener('input', ()=>{ publishBtn.disabled = $('token').value.trim()==='' || Object.keys(lastArtifacts).length===0; });
+
+})();
 </script>
 </body>
-</html>
+  </html>
