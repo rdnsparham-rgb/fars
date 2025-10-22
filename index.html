@@ -3,404 +3,197 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>کارگاه امضای دیجیتال — همه‌چیز در مرورگر + کپی با یک کلیک</title>
+<title>کارگاه امضای امن — تولید و بررسی (Ed25519 + AES-256-GCM)</title>
 <style>
-  :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial; --accent:#2563eb}
-  body{max-width:1000px;margin:20px auto;padding:18px;color:#0b1220}
-  .card{background:#fff;padding:14px;border-radius:12px;box-shadow:0 6px 20px rgba(20,20,50,0.05);margin-bottom:12px}
-  h1{font-size:20px;margin:0 0 6px}
-  label{display:block;margin-top:8px;font-weight:600}
-  select,input,textarea,button{width:100%;padding:10px;margin-top:8px;border-radius:8px;border:1px solid #e6e9f2;font-size:14px}
+  /* Classic parchment background + clean card UI */
+  body{font-family: Tahoma, 'Segoe UI', Roboto, Arial; background: radial-gradient(circle at 10% 10%, #fffef8, #f4ecd6 30%, #e6d7a3 60%); color:#111; margin:0; padding:28px;}
+  .container{max-width:900px;margin:0 auto}
+  header{text-align:center;margin-bottom:18px}
+  h1{margin:0;font-size:22px}
+  .card{background:rgba(255,255,255,0.85);border:1px solid rgba(0,0,0,0.06);padding:14px;border-radius:10px;box-shadow:0 6px 18px rgba(20,20,40,0.08);margin-bottom:12px}
+  label{display:block;margin-top:10px;font-weight:600}
+  textarea,input,select,button{width:100%;padding:10px;margin-top:8px;border-radius:8px;border:1px solid #d3caa0;background:transparent}
   .row{display:flex;gap:8px}
   .col{flex:1}
-  pre{background:#f6f9ff;padding:10px;border-radius:8px;overflow:auto;white-space:pre-wrap}
-  .muted{color:#556; font-size:13px}
-  button.primary{background:var(--accent);color:white;border:0;padding:10px;border-radius:8px;cursor:pointer}
-  .btn-ghost{background:transparent;border:1px solid #e6e9f2;padding:8px;border-radius:8px;cursor:pointer}
-  .controls{display:flex;gap:8px;flex-wrap:wrap}
-  .artifact{display:flex;gap:8px;align-items:start;margin-top:8px}
-  .artifact pre{flex:1;margin:0}
-  .art-actions{display:flex;flex-direction:column;gap:6px}
-  .small{font-size:13px;color:#666}
-  .toggle{cursor:pointer;color:var(--accent);text-decoration:underline}
-  .fingerprint{font-family:monospace;background:#eef3ff;padding:6px;border-radius:6px;display:inline-block}
-  footer{margin-top:18px;color:#666;font-size:13px;text-align:center}
+  button.primary{background:#3b6b2f;color:#fff;border:0;padding:10px;border-radius:8px;cursor:pointer}
+  pre{background:#fff8e6;padding:10px;border-radius:8px;overflow:auto;white-space:pre-wrap}
+  .artifact{display:flex;gap:8px;align-items:flex-start;margin-top:8px}
+  .actions{display:flex;flex-direction:column;gap:6px}
+  .muted{color:#5b4b2d;font-size:13px}
+  .small{font-size:13px;color:#4a3d2a}
+  .inline{display:inline-block}
+  footer{margin-top:18px;text-align:center;color:#4a3d2a}
 </style>
 </head>
 <body>
-  <div class="card">
-    <h1>کارگاه امضای دیجیتال — همه‌چیز در مرورگر</h1>
-    <p class="muted">کلیدها و امضاها در مرورگر تولید می‌شوند. کلید خصوصی هرگز به سرور ارسال نشود مگر کاربر صریحاً بخواهد. با دکمهٔ «کپی» می‌تونی خروجی‌ها را در کلیپ‌بورد بگذاری.</p>
+<div class="container">
+  <header>
+    <h1>کارگاه امضای امن — تولید و بررسی</h1>
+    <div class="small">الگوریتم امضا: Ed25519  — رمزگذاری امضا: AES-256-GCM (مشتق‌شده از پس‌عبور)</div>
+  </header>  <div class="card">
+    <label>پیغام یا متن برای امضا</label>
+    <textarea id="message" rows="4">این یک پیام نمونه است.</textarea><label>پس‌عبور برای رمزگذاری AES-256 (رمز عبور را به‌خاطر بسپار)</label>
+<input id="passphrase" type="password" placeholder="یک پس‌عبور قوی وارد کنید" />
+
+<div class="row">
+  <div class="col"><button id="gen" class="primary">تولید کلید و امضا + رمزگذاری</button></div>
+  <div class="col"><button id="verify" class="primary" style="background:#6b4c2f">بررسی امضا (Decrypt + Verify)</button></div>
+</div>
+
+<div style="margin-top:12px">
+  <label>خروجی‌ها</label>
+  <div id="artifacts">
+    <div class="small muted">بعد از «تولید» خروجی‌ها اینجا نمایش داده می‌شوند.</div>
   </div>
+</div>
 
-  <div class="card">
-    <label>نوع امضا / گواهی</label>
-    <select id="type">
-      <option value="ed25519">Ed25519 (signature)</option>
-      <option value="rsa">RSA (2048/4096) signature & X.509</option>
-      <option value="ecdsa-p256">ECDSA (P-256) signature & X.509</option>
-      <option value="ecdsa-p384">ECDSA (P-384) signature & X.509</option>
-      <option value="pgp">OpenPGP (PGP keypair + detached sig)</option>
-      <option value="x509-self">X.509 self-signed (RSA or ECDSA)</option>
-      <option value="csr">CSR (Certificate Signing Request)</option>
-    </select>
+  </div>  <div class="card">
+    <h3>راهنمای سریع</h3>
+    <ul class="muted">
+      <li>کلید خصوصی در مرورگر ساخته می‌شود و به‌صورت پیش‌فرض نمایش داده نمی‌شود — در صورت نیاز می‌توان آن را دانلود کرد.</li>
+      <li>پس‌عبور را برای رمزگشایی امضا حفظ کن — بدون پس‌عبور کسی نمی‌تواند امضای رمزشده را باز کند.</li>
+      <li>برای بررسی: کاربر باید کلید عمومی، امضای رمزشده (JSON) و پس‌عبور را وارد کند.</li>
+    </ul>
+  </div>  <footer class="small">نسخهٔ کلاینت — هیچ داده‌ای به سرور ارسال نمی‌شود مگر کاربر خودش اقدام کند.</footer>
+</div><script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl.min.js"></script><script src="https://cdn.jsdelivr.net/npm/tweetnacl-util@0.15.1/nacl-util.min.js"></script><script>
+// Helper utilities
+const u8ToB64 = (u8) => btoa(String.fromCharCode(...u8));
+const b64ToU8 = (b64) => new Uint8Array(atob(b64).split('').map(c=>c.charCodeAt(0)));
+const u8ToHex = (u8) => Array.from(u8).map(b=>b.toString(16).padStart(2,'0')).join('');
 
-    <div id="params" style="margin-top:10px">
-      <label>پارامترها</label>
-      <input id="rsa-bits" type="text" value="2048" placeholder="RSA bits (مثلاً 2048 یا 4096)" />
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <input id="cn" type="text" value="example.local" placeholder="Common Name (CN) برای X.509/CSR" />
-        <input id="days" type="text" value="365" placeholder="مدت اعتبار (روز)" />
-      </div>
-      <label style="margin-top:8px">پیغام/متن برای امضا (اختیاری)</label>
-      <textarea id="message" rows="4">این یک پیام تست است — امضا توسط کارگاه ساخته شد.</textarea>
-    </div>
+// Web Crypto helpers for AES-256-GCM + PBKDF2
+async function deriveKeyFromPassphrase(passphrase, salt, iterations=150000){
+  const enc = new TextEncoder();
+  const passKey = await crypto.subtle.importKey('raw', enc.encode(passphrase), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2', salt: salt, iterations: iterations, hash: 'SHA-256'}, passKey, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']);
+}
 
-    <div class="controls" style="margin-top:10px">
-      <button id="generate" class="primary">تولید</button>
-      <button id="downloadAll" class="btn-ghost">دانلود همه</button>
-      <button id="clear" class="btn-ghost">پاک کردن خروجی</button>
-    </div>
+async function aesGcmEncrypt(key, plaintext){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = new TextEncoder();
+  const ct = await crypto.subtle.encrypt({name:'AES-GCM', iv: iv}, key, enc.encode(plaintext));
+  return { iv: u8ToB64(iv), ct: u8ToB64(new Uint8Array(ct)) };
+}
 
-    <div style="margin-top:12px">
-      <label>خروجی‌ها</label>
-      <div id="artifacts"></div>
-    </div>
-  </div>
+async function aesGcmDecrypt(key, iv_b64, ct_b64){
+  const iv = b64ToU8(iv_b64);
+  const ct = b64ToU8(ct_b64);
+  const dec = await crypto.subtle.decrypt({name:'AES-GCM', iv: iv}, key, ct);
+  return new TextDecoder().decode(dec);
+}
 
-  <div class="card">
-    <h3>انتشار (اختیاری)</h3>
-    <p class="muted">می‌توانید فایل‌ها را به‌صورت محلی دانلود کنید یا با Gist منتشر کنید — برای انتشار نیاز به Personal Access Token با scope: gist دارید.</p>
-    <input id="token" type="password" placeholder="ghp_..." />
-    <div style="display:flex;gap:8px;margin-top:8px">
-      <button id="publish" class="primary" disabled>انتشار به Gist</button>
-      <button id="copyAll" class="btn-ghost">کپی همه (JSON)</button>
-    </div>
-    <div id="status" class="muted" style="margin-top:8px"></div>
-  </div>
+// Main UI logic
+const $ = id => document.getElementById(id);
+const artifactsEl = $('artifacts');
 
-<script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tweetnacl-util@0.15.1/nacl-util.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/forge/0.10.0/forge.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/openpgp/5.5.0/openpgp.min.js"></script>
-
-<script>
-(function(){
-  const $ = id => document.getElementById(id);
-  const u8ToB64 = u8 => btoa(String.fromCharCode(...u8));
-  const b64ToU8 = b64 => new Uint8Array(atob(b64).split('').map(c=>c.charCodeAt(0)));
-  const hex = (u8) => Array.from(u8).map(b=>b.toString(16).padStart(2,'0')).join('');
-  const artifactsEl = $('artifacts');
-  const statusEl = $('status');
-
-  let artifacts = {}; // store generated outputs
-
-  function clearArtifacts(){
-    artifacts = {};
-    artifactsEl.innerHTML = '<div class="small">هنوز خروجی‌ای تولید نشده.</div>';
-    $('publish').disabled = true;
-    $('copyAll').disabled = true;
-    statusEl.textContent = '';
-  }
-  clearArtifacts();
-
-  function makeArtifactCard(name, content, opts={}){
-    // opts: {filename, visibleLines, isPem}
-    const filename = opts.filename || (name + '.txt');
-    const pre = document.createElement('pre');
-    pre.textContent = content.length>300 ? (content.slice(0,300)+'\n\n... (نمایش کوتاه، دکمهٔ "نمایش کامل" را بزنید)') : content;
-    pre.style.whiteSpace = 'pre-wrap';
-
-    const actions = document.createElement('div');
-    actions.className = 'art-actions';
-
-    const btnCopy = document.createElement('button');
-    btnCopy.className = 'btn-ghost';
-    btnCopy.textContent = 'کپی';
-    btnCopy.addEventListener('click', async ()=> {
-      try {
-        await navigator.clipboard.writeText(content);
-        statusEl.textContent = 'کپی شد ✅ ('+name+')';
-      } catch(e){
-        statusEl.textContent = 'خطا در کپی: ' + e;
-      }
-    });
-
-    const btnDownload = document.createElement('button');
-    btnDownload.className = 'btn-ghost';
-    btnDownload.textContent = 'دانلود';
-    btnDownload.addEventListener('click', ()=> {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([content], {type:'text/plain;charset=utf-8'}));
-      a.download = filename;
-      a.click();
-    });
-
-    actions.appendChild(btnCopy);
-    actions.appendChild(btnDownload);
-
-    const art = document.createElement('div');
-    art.className = 'artifact card'; // small card-like
-    art.style.padding = '10px';
+function showArtifacts(list){
+  artifactsEl.innerHTML = '';
+  for(const it of list){
+    const wrap = document.createElement('div');
+    wrap.className = 'artifact card';
+    wrap.style.padding='10px';
     const left = document.createElement('div');
-    left.style.flex = '1';
+    left.style.flex='1';
     const title = document.createElement('div');
-    title.innerHTML = '<strong>' + name + '</strong> <span class="small muted">(' + filename + ')</span>';
+    title.innerHTML = '<strong>' + it.name + '</strong> <div class="small">' + (it.note||'') + '</div>';
+    const pre = document.createElement('pre');
+    pre.textContent = it.value;
     left.appendChild(title);
     left.appendChild(pre);
 
-    // toggle full view if long
-    if(content.length>300){
-      const toggle = document.createElement('div');
-      toggle.className = 'toggle';
-      toggle.textContent = 'نمایش کامل';
-      toggle.addEventListener('click', ()=> {
-        if(pre.textContent.length>300 && pre.textContent.endsWith('(نمایش کوتاه، دکمهٔ "نمایش کامل" را بزنید)')){
-          pre.textContent = content;
-          toggle.textContent = 'جمع‌کردن';
-        } else {
-          pre.textContent = content.slice(0,300)+'\n\n... (نمایش کوتاه، دکمهٔ "نمایش کامل" را بزنید)';
-          toggle.textContent = 'نمایش کامل';
-        }
-      });
-      left.appendChild(toggle);
-    }
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    const btnCopy = document.createElement('button'); btnCopy.className='btn-ghost'; btnCopy.textContent='کپی';
+    btnCopy.addEventListener('click', async ()=>{ try{ await navigator.clipboard.writeText(it.value); alert('کپی شد ✅'); }catch(e){ alert('کپی موفق نبود: '+e); } });
+    const btnDl = document.createElement('button'); btnDl.className='btn-ghost'; btnDl.textContent='دانلود';
+    btnDl.addEventListener('click', ()=>{ const a=document.createElement('a'); a.href = URL.createObjectURL(new Blob([it.value],{type:'text/plain'})); a.download = (it.filename|| (it.name.replace(/\s+/g,'_')+'.txt')); a.click(); });
+    actions.appendChild(btnCopy); actions.appendChild(btnDl);
 
-    art.appendChild(left);
-    art.appendChild(actions);
-    return art;
+    wrap.appendChild(left); wrap.appendChild(actions);
+    artifactsEl.appendChild(wrap);
   }
+}
 
-  // helpers for crypto generations
-  function genEd25519(message){
-    const kp = nacl.sign.keyPair();
-    const pubB64 = u8ToB64(kp.publicKey);
-    const privSeedB64 = u8ToB64(kp.secretKey.slice(0,32));
-    const sig = nacl.sign.detached(nacl.util.decodeUTF8(message), kp.secretKey);
-    const sigB64 = u8ToB64(sig);
-    return {
-      type:'ed25519',
-      public_b64: pubB64,
-      private_b64: privSeedB64,
-      signature_b64: sigB64,
-      message
-    };
-  }
-
-  function genRSA(bits=2048){
-    statusEl.textContent = 'تولید کلید RSA ('+bits+') — در حال انجام...';
-    const keys = forge.pki.rsa.generateKeyPair({bits: parseInt(bits,10), e: 0x10001});
-    const privPem = forge.pki.privateKeyToPem(keys.privateKey);
-    const pubPem = forge.pki.publicKeyToPem(keys.publicKey);
-    statusEl.textContent = 'کلید RSA تولید شد.';
-    return { privatePem: privPem, publicPem: pubPem, keypair: keys };
-  }
-
-  function signMessageRSA(privatePem, message){
-    const priv = forge.pki.privateKeyFromPem(privatePem);
-    const md = forge.md.sha256.create();
-    md.update(message, 'utf8');
-    const sig = priv.sign(md);
-    return btoa(sig);
-  }
-
-  function genECDSA(curve='P-256'){
-    statusEl.textContent = 'تولید کلید ECDSA ('+curve+') ...';
-    const keys = forge.pki.ec.generateKeyPair({namedCurve: curve});
-    const privPem = forge.pki.privateKeyToPem(keys.privateKey);
-    const pubPem = forge.pki.publicKeyToPem(keys.publicKey);
-    statusEl.textContent = 'کلید ECDSA تولید شد.';
-    return { privatePem: privPem, publicPem: pubPem, keypair: keys };
-  }
-
-  function genX509Self({keypair, cn='example.local', days=365}){
-    const cert = forge.pki.createCertificate();
-    cert.publicKey = keypair.publicKey;
-    cert.serialNumber = (Math.floor(Math.random()*1e16)).toString(16);
-    const now = new Date();
-    cert.validity.notBefore = now;
-    cert.validity.notAfter = new Date(now.getTime() + (parseInt(days,10)||365)*24*60*60*1000);
-    const attrs = [{name:'commonName', value:cn}];
-    cert.setSubject(attrs);
-    cert.setIssuer(attrs);
-    cert.setExtensions([{name:'basicConstraints', cA:true}, {name:'keyUsage', digitalSignature:true, keyCertSign:true, keyEncipherment:true}]);
-    cert.sign(keypair.privateKey, forge.md.sha256.create());
-    return forge.pki.certificateToPem(cert);
-  }
-
-  function genCSR({keypair, cn='example.local'}){
-    const csr = forge.pki.createCertificationRequest();
-    csr.publicKey = keypair.publicKey;
-    csr.setSubject([{name:'commonName', value:cn}]);
-    csr.sign(keypair.privateKey, forge.md.sha256.create());
-    return forge.pki.certificationRequestToPem(csr);
-  }
-
-  async function genPGP(message){
-    statusEl.textContent = 'تولید کلید PGP — ممکن است چند ثانیه طول بکشد...';
-    const userId = {name:'User', email:'user@example.com'};
-    const {privateKey, publicKey} = await openpgp.generateKey({
-      type: 'rsa',
-      rsaBits: 2048,
-      userIDs: [userId],
-      format: 'armored'
-    });
-    const privKeyObj = await openpgp.readPrivateKey({armoredKey: privateKey});
-    const signed = await openpgp.sign({
-      message: await openpgp.createMessage({text: message}),
-      signingKeys: privKeyObj,
-      detached: true
-    });
-    statusEl.textContent = 'PGP ساخته شد.';
-    return { privateArmored: privateKey, publicArmored: publicKey, signatureArmored: signed };
-  }
-
-  function certFingerprint(pemCert){
-    try{
-      const cert = forge.pki.certificateFromPem(pemCert);
-      const asn1 = forge.pki.certificateToAsn1(cert);
-      const der = forge.asn1.toDer(asn1).getBytes();
-      const md = forge.md.sha256.create();
-      md.update(der);
-      const digest = md.digest().toHex().match(/.{1,2}/g).join(':');
-      return digest;
-    }catch(e){
-      return null;
-    }
-  }
-
-  // Generate main
-  $('generate').addEventListener('click', async ()=>{
-    clearArtifacts();
-    artifacts = {};
-    const t = $('type').value;
+// Generate: create Ed25519 keypair, sign message, derive AES key from passphrase, encrypt signature (base64), output public key + encrypted bundle
+$('gen').addEventListener('click', async ()=>{
+  try{
     const message = $('message').value || '';
-    const cn = $('cn').value || 'example.local';
-    const days = $('days').value || '365';
-    const rsaBits = $('rsa-bits').value || '2048';
-    try {
-      if(t==='ed25519'){
-        const res = genEd25519(message);
-        artifacts = res;
-        artifactsEl.appendChild(makeArtifactCard('public_b64', res.public_b64, {filename:'public.b64.txt'}));
-        artifactsEl.appendChild(makeArtifactCard('private_seed_b64', res.private_b64, {filename:'private_seed.b64.txt'}));
-        artifactsEl.appendChild(makeArtifactCard('signature_b64', res.signature_b64, {filename:'signature.b64.txt'}));
-      } else if(t==='rsa'){
-        const keys = genRSA(rsaBits);
-        const sig = signMessageRSA(keys.privatePem, message);
-        artifacts = {type:'rsa', privatePem: keys.privatePem, publicPem: keys.publicPem, signature_b64: sig, message};
-        artifactsEl.appendChild(makeArtifactCard('private.pem', keys.privatePem, {filename:'private.pem'}));
-        artifactsEl.appendChild(makeArtifactCard('public.pem', keys.publicPem, {filename:'public.pem'}));
-        artifactsEl.appendChild(makeArtifactCard('signature.b64', sig, {filename:'signature.b64.txt'}));
-      } else if(t==='ecdsa-p256' || t==='ecdsa-p384'){
-        const curve = t==='ecdsa-p256' ? 'P-256' : 'P-384';
-        const keys = genECDSA(curve);
-        artifacts = {type:'ecdsa', privatePem: keys.privatePem, publicPem: keys.publicPem};
-        artifactsEl.appendChild(makeArtifactCard('private.pem', keys.privatePem, {filename:'private.pem'}));
-        artifactsEl.appendChild(makeArtifactCard('public.pem', keys.publicPem, {filename:'public.pem'}));
-      } else if(t==='x509-self'){
-        // default RSA generation for CA-like cert, allow RSA or ECDSA based on rsa-bits=='ecdsa-P-256' etc.
-        let keys;
-        if(rsaBits.startsWith('ecdsa-')){
-          const curve = rsaBits.split('-')[1] || 'P-256';
-          keys = genECDSA(curve);
-        } else {
-          keys = genRSA(rsaBits);
-        }
-        const certPem = genX509Self({keypair: keys.keypair, cn, days});
-        const fp = certFingerprint(certPem);
-        artifacts = {type:'x509-self', privatePem: keys.privatePem, publicPem: keys.publicPem, certPem, fingerprint: fp};
-        artifactsEl.appendChild(makeArtifactCard('certificate.pem', certPem, {filename:'certificate.pem'}));
-        artifactsEl.appendChild(makeArtifactCard('private.pem', keys.privatePem, {filename:'private.pem'}));
-        if(fp) {
-          const fdiv = document.createElement('div'); fdiv.style.marginTop='8px'; fdiv.innerHTML = 'Fingerprint (SHA-256): <span class="fingerprint">'+fp+'</span>';
-          artifactsEl.appendChild(fdiv);
-        }
-      } else if(t==='csr'){
-        const keys = genRSA(rsaBits);
-        const csrPem = genCSR({keypair: keys.keypair, cn});
-        artifacts = {type:'csr', privatePem: keys.privatePem, publicPem: keys.publicPem, csrPem};
-        artifactsEl.appendChild(makeArtifactCard('csr.pem', csrPem, {filename:'csr.pem'}));
-        artifactsEl.appendChild(makeArtifactCard('private.pem', keys.privatePem, {filename:'private.pem'}));
-      } else if(t==='pgp'){
-        const res = await genPGP(message);
-        artifacts = res;
-        artifactsEl.appendChild(makeArtifactCard('public.asc', res.publicArmored, {filename:'public.asc'}));
-        artifactsEl.appendChild(makeArtifactCard('private.asc', res.privateArmored, {filename:'private.asc'}));
-        artifactsEl.appendChild(makeArtifactCard('signature.asc', res.signatureArmored, {filename:'signature.asc'}));
-      }
+    const pass = $('passphrase').value;
+    if(!pass){ alert('لطفاً یک پس‌عبور وارد کنید تا امضا رمزنگاری شود.'); return; }
 
-      $('publish').disabled = false;
-      $('copyAll').disabled = false;
-      statusEl.textContent = 'تولید با موفقیت انجام شد ✅';
-    } catch(e){
-      statusEl.textContent = 'خطا در تولید: ' + e;
-      console.error(e);
-    }
-  });
+    // 1. generate Ed25519 keypair (tweetnacl)
+    const kp = nacl.sign.keyPair();
+    const pub_b64 = u8ToB64(kp.publicKey);
+    const priv_seed_b64 = u8ToB64(kp.secretKey.slice(0,32)); // seed (optional)
 
-  // Download all: simply trigger each artifact's download by iterating artifact cards
-  $('downloadAll').addEventListener('click', ()=>{
-    // find all download buttons
-    const downloads = artifactsEl.querySelectorAll('button');
-    downloads.forEach(btn => {
-      if(btn.textContent === 'دانلود') btn.click();
-    });
-    statusEl.textContent = 'درخواست دانلودها ارسال شد.';
-  });
+    // 2. sign message
+    const msgU8 = nacl.util.decodeUTF8(message);
+    const signature = nacl.sign.detached(msgU8, kp.secretKey); // Uint8Array
+    const sig_b64 = u8ToB64(signature);
 
-  // Clear
-  $('clear').addEventListener('click', clearArtifacts);
+    // 3. derive AES-256 key from passphrase using PBKDF2 with random salt
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const derivedKey = await deriveKeyFromPassphrase(pass, salt, 150000);
 
-  // Publish to gist
-  $('publish').addEventListener('click', async ()=>{
-    const token = $('token').value.trim();
-    if(!token){ alert('برای انتشار نیاز به GitHub token با scope:gist دارید.'); return; }
-    if(!artifacts || Object.keys(artifacts).length===0){ alert('ابتدا تولید کن'); return; }
-    const files = {};
-    for(const k in artifacts){
-      let name = k;
-      let content = artifacts[k];
-      if(typeof content === 'object') content = JSON.stringify(content, null, 2);
-      // choose sensible filenames
-      if(k.toLowerCase().includes('pem') || k.toLowerCase().includes('asc') || k.toLowerCase().includes('csr')) name = k;
-      else name = k + '.txt';
-      files[name] = { content: content };
-    }
-    statusEl.textContent = 'در حال ارسال به GitHub...';
+    // 4. encrypt signature (we'll encrypt the base64 signature string)
+    const encRes = await aesGcmEncrypt(derivedKey, sig_b64);
+
+    // 5. prepare a JSON bundle that contains salt, iv, ciphertext and algorithm metadata
+    const bundle = {
+      alg: 'AES-256-GCM',
+      kdf: 'PBKDF2-SHA256',
+      kdf_iter: 150000,
+      salt: u8ToB64(salt),
+      iv: encRes.iv,
+      ciphertext: encRes.ct,
+      enc_data: 'signature_base64'
+    };
+
+    // show outputs
+    showArtifacts([
+      {name:'Public Key (base64)', value: pub_b64, filename:'public_key.b64.txt', note:'برای بررسی امضا منتشر کنید.'},
+      {name:'Encrypted Signature (JSON)', value: JSON.stringify(bundle, null, 2), filename:'signature_encrypted.json', note:'برای بررسی نیاز به پس‌عبور و کلید عمومی دارید.'},
+      {name:'Private Key Seed (base64) — نگهداری امن', value: priv_seed_b64, filename:'private_seed.b64.txt', note:'کلید خصوصی (seed). اگر می‌خواهید کلید را بازسازی کنید از این استفاده کنید.'},
+      {name:'Plain Signature (base64) — فقط محلی', value: sig_b64, filename:'signature.b64.txt', note:'امضای اصلی (فقط برای ذخیره محلی)'}
+    ]);
+
+    alert('امضا ایجاد و رمزگذاری شد ✅\nکلید عمومی و بستهٔ رمزشده آماده است.');
+  }catch(e){ console.error(e); alert('خطا: '+e); }
+});
+
+// Verify: user provides public key (base64), encrypted JSON bundle, and passphrase. We'll derive key, decrypt signature, and verify signature against message.
+$('verify').addEventListener('click', async ()=>{
+  try{
+    const pub_b64 = prompt('کلید عمومی را (base64) وارد یا paste کن:');
+    if(!pub_b64) return;
+    const bundle_text = prompt('بستهٔ رمزشده (JSON) را وارد یا paste کن:');
+    if(!bundle_text) return;
+    const pass = prompt('پس‌عبور برای رمزگشایی وارد کن:');
+    if(!pass) return;
+
+    let bundle;
+    try{ bundle = JSON.parse(bundle_text); } catch(e){ alert('بستهٔ JSON معتبر نیست.'); return; }
+    if(!bundle.salt || !bundle.iv || !bundle.ciphertext){ alert('بسته ناقص است. باید salt، iv و ciphertext داشته باشد.'); return; }
+
+    // derive key
+    const salt = b64ToU8(bundle.salt);
+    const derivedKey = await deriveKeyFromPassphrase(pass, salt, bundle.kdf_iter || 150000);
+
+    // decrypt
+    let sig_b64;
     try{
-      const resp = await fetch('https://api.github.com/gists', {
-        method: 'POST',
-        headers: {'Authorization': 'token '+token, 'Content-Type':'application/json'},
-        body: JSON.stringify({public:true, description: 'Generated by Signature Factory', files})
-      });
-      const data = await resp.json();
-      if(resp.ok){
-        statusEl.innerHTML = 'Gist ساخته شد: <a href="'+data.html_url+'" target=_blank>'+data.html_url+'</a>';
-      } else {
-        statusEl.textContent = 'خطا در GitHub: ' + (data.message || resp.status);
-      }
-    }catch(e){
-      statusEl.textContent = 'خطا شبکه: ' + e;
-    }
-  });
+      sig_b64 = await aesGcmDecrypt(derivedKey, bundle.iv, bundle.ciphertext);
+    }catch(e){ alert('رمزگشایی موفق نبود — پس‌عبور اشتباه یا داده خراب است.'); return; }
 
-  // Copy all as JSON
-  $('copyAll').addEventListener('click', async ()=>{
-    if(!artifacts || Object.keys(artifacts).length===0){ alert('ابتدا تولید کنید'); return; }
-    try{
-      await navigator.clipboard.writeText(JSON.stringify(artifacts, null, 2));
-      statusEl.textContent = 'همه خروجی‌ها (JSON) کپی شد ✅';
-    }catch(e){
-      statusEl.textContent = 'خطا در کپی همه: ' + e;
-    }
-  });
-
-})();
-</script>
-
-<footer>
-  <div>هشدار: برای صدور گواهی عمومی (برای وب) از CA رسمی مثل Let's Encrypt استفاده کنید. این ابزار آموزشی و مناسب تولید کلید/CSR و امضا در کلاینت است.</div>
-</footer>
-</body>
+    // verify signature
+    const message = $('message').value || '';
+    const msgU8 = nacl.util.decodeUTF8(message);
+    const sigU8 = b64ToU8(sig_b64);
+    const pubU8 = b64ToU8(pub_b64);
+    const ok = nacl.sign.detached.verify(msgU8, sigU8, pubU8);
+    if(ok){ alert('امضا معتبر است ✅'); }
+    else { alert('امضا نامعتبر ❌ — یا پیام/کلید عمومی/امضا با هم مطابقت ندارند.'); }
+  }catch(e){ console.error(e); alert('خطا: '+e); }
+});
+</script></body>
 </html>
