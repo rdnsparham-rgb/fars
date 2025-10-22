@@ -1,11 +1,182 @@
-<!DOCTYPE html>
-<html lang="fa" dir="rtl">
+<!-- save as sign-and-publish.html and host on GitHub Pages or any static host -->
+<!doctype html>
+<html lang="fa">
 <head>
-  <meta charset="UTF-8">
-  <title>اندروید چیست</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>تولید امضای دیجیتال و ارسال به GitHub</title>
+<style>
+  :root{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+  body{max-width:900px;margin:28px auto;padding:18px;background:#f7f7fb;border-radius:12px;color:#111}
+  h1{font-size:20px;margin-bottom:6px}
+  .card{background:white;padding:14px;border-radius:10px;box-shadow:0 6px 20px rgba(20,20,50,0.06);margin-bottom:12px}
+  label{display:block;margin-top:8px;font-weight:600}
+  textarea, input[type=text], input[type=password]{width:100%;padding:8px;margin-top:6px;border:1px solid #e2e6ef;border-radius:8px;font-size:14px}
+  button{margin-top:10px;padding:10px 14px;border-radius:8px;border:0;background:#2b6df6;color:white;font-weight:600;cursor:pointer}
+  small{color:#555}
+  pre{white-space:pre-wrap;background:#f3f6ff;padding:10px;border-radius:8px;overflow:auto}
+  .row{display:flex;gap:8px}
+  .col{flex:1}
+  .muted{color:#666;font-size:13px}
+</style>
 </head>
 <body>
-  <h1>اندروید چیست؟</h1>
-  <p>یک سیستم‌عامل متن‌باز است که برای گوشی‌های هوشمند مورد استفاده قرار می‌گیرد.</p>
+  <div class="card">
+    <h1>تولید امضا (Ed25519) در مرورگر و ارسال به GitHub</h1>
+    <p class="muted">کلید خصوصی در مرورگر تولید می‌شود و هیچ‌وقت به سرور ارسال نمی‌شود مگر خودتان صریحاً بخواهید. برای انتشار روی GitHub از Gist یا api استفاده کنید (توکن لازم است).</p>
+  </div>
+
+  <div class="card">
+    <label>پیغام / فایل (متن) برای امضا</label>
+    <textarea id="message" rows="4">این یک پیام تست است — امضا تولید شده توسط سایت.</textarea>
+
+    <div class="row" style="margin-top:10px">
+      <div class="col">
+        <button id="gen">تولید کلید جدید</button>
+      </div>
+      <div class="col">
+        <button id="sign" disabled>امضا کن</button>
+      </div>
+    </div>
+
+    <div style="margin-top:12px">
+      <label>کلید عمومی (Base64)</label>
+      <pre id="pub" aria-live="polite">—</pre>
+
+      <label>کلید خصوصی (Base64) — فقط اگر می‌خواهی ذخیره کنی</label>
+      <pre id="priv" aria-live="polite">—</pre>
+
+      <label>امضا (Base64)</label>
+      <pre id="sig" aria-live="polite">—</pre>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>انتشار روی GitHub</h3>
+    <p class="muted">برای انتشار باید توکن GitHub (با scope: gist یا repo) به‌صورت دستی وارد شود. شما می‌توانید OAuth2 پیاده کنید تا کاربر بدون وارد کردن توکن عمل کند.</p>
+
+    <label>توکن شخصی GitHub (یا خالی بگذار برای فقط دانلود محلی)</label>
+    <input id="token" type="password" placeholder="ghp_..." />
+
+    <div class="row">
+      <div class="col">
+        <button id="publish-gist" disabled>ایجاد Gist با کلید عمومی و امضا</button>
+      </div>
+      <div class="col">
+        <button id="download-zip" disabled>دانلود ZIP از کلید و امضا</button>
+      </div>
+    </div>
+
+    <div id="status" style="margin-top:10px" class="muted"></div>
+  </div>
+
+<script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tweetnacl-util@0.15.1/nacl-util.min.js"></script>
+<script>
+  // Helper utilities
+  const u8ToB64 = (u8) => btoa(String.fromCharCode(...u8));
+  const b64ToU8 = (b64) => new Uint8Array(atob(b64).split('').map(c=>c.charCodeAt(0)));
+  const u8ToHex = (u8) => Array.from(u8).map(b=>b.toString(16).padStart(2,'0')).join('');
+
+  let keyPair = null;
+  const el = {
+    gen: document.getElementById('gen'),
+    sign: document.getElementById('sign'),
+    message: document.getElementById('message'),
+    pub: document.getElementById('pub'),
+    priv: document.getElementById('priv'),
+    sig: document.getElementById('sig'),
+    token: document.getElementById('token'),
+    publishGist: document.getElementById('publish-gist'),
+    downloadZip: document.getElementById('download-zip'),
+    status: document.getElementById('status')
+  };
+
+  el.gen.addEventListener('click', ()=>{
+    // Generate Ed25519 keypair (tweetnacl uses nacl.sign.keyPair())
+    keyPair = nacl.sign.keyPair();
+    const pubB64 = u8ToB64(keyPair.publicKey);
+    const privB64 = u8ToB64(keyPair.secretKey.slice(0,32)); // first 32 bytes is private seed
+    el.pub.textContent = pubB64;
+    el.priv.textContent = privB64 + "\\n\\n🔐 (نگهداری امن فراموش نشود)";
+    el.sign.disabled = false;
+    el.publishGist.disabled = true;
+    el.downloadZip.disabled = true;
+    el.sig.textContent = "—";
+    el.status.textContent = "کلید جدید ساخته شد. حالا می‌توانید پیام را امضا کنید.";
+  });
+
+  el.sign.addEventListener('click', ()=>{
+    if(!keyPair){ alert('ابتدا کلید بسازید.'); return; }
+    const msgStr = el.message.value || "";
+    const msgU8 = nacl.util.decodeUTF8(msgStr);
+    const signed = nacl.sign(msgU8, keyPair.secretKey);
+    const signature = signed.slice(0,64); // 64-byte signature
+    const sigB64 = u8ToB64(signature);
+    el.sig.textContent = sigB64;
+    el.publishGist.disabled = false;
+    el.downloadZip.disabled = false;
+    el.status.textContent = "پیغام امضا شد. می‌توانید آن را منتشر یا دانلود کنید.";
+  });
+
+  // Create a gist with public key + signature + message
+  el.publishGist.addEventListener('click', async ()=>{
+    const token = el.token.value.trim();
+    if(!token){ if(!confirm("شما توکن GitHub وارد نکردید. می‌خواهید Gist را به‌صورت ناشناس (غیرممکن) ایجاد کنید؟ (برای ایجاد Gist نیاز به توکن دارید)")) return; }
+    if(!keyPair || el.sig.textContent==="—"){ alert('ابتدا پیام را امضا کنید.'); return; }
+
+    el.status.textContent = "در حال ارسال به GitHub...";
+    const body = {
+      description: "Public key + signature generated on-site",
+      public: true,
+      files: {
+        "public_key.b64": { content: el.pub.textContent },
+        "signature.b64": { content: el.sig.textContent },
+        "message.txt": { content: el.message.value }
+      }
+    };
+
+    try{
+      const resp = await fetch("https://api.github.com/gists", {
+        method: "POST",
+        headers: {
+          "Content-Type":"application/json",
+          "Authorization": token ? ("token " + token) : undefined
+        },
+        body: JSON.stringify(body)
+      });
+      const data = await resp.json();
+      if(resp.ok){
+        el.status.innerHTML = "Gist ساخته شد: <a href='"+data.html_url+"' target=_blank>"+data.html_url+"</a>";
+      } else {
+        el.status.textContent = "خطا هنگام ساخت Gist: " + (data.message || resp.status);
+      }
+    }catch(err){
+      el.status.textContent = "خطا شبکه: " + err;
+    }
+  });
+
+  // Download ZIP (simple: create files and zip using JSZip or offer separate downloads)
+  el.downloadZip.addEventListener('click', async ()=>{
+    if(!keyPair || el.sig.textContent==="—"){ alert('ابتدا پیام را امضا کنید.'); return; }
+    // Create a small zip using plain blobs (no external lib) => create a multi-file .zip is complex,
+    // here we'll just create a single .tar-like blob as .zip may be heavy. Simpler: offer individual downloads.
+    function dl(filename, text){
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], {type:'text/plain'}));
+      a.download = filename;
+      a.click();
+    }
+    dl("public_key.b64.txt", el.pub.textContent);
+    dl("private_key.b64.txt", el.priv.textContent.split("\\n")[0]);
+    dl("signature.b64.txt", el.sig.textContent);
+    dl("message.txt", el.message.value);
+    el.status.textContent = "فایل‌ها برای دانلود آماده شدند (چهار دانلود جداگانه).";
+  });
+
+  // UX: enable publish only after signature
+  el.token.addEventListener('input', ()=>{ /* optional: nothing */ });
+
+</script>
 </body>
 </html>
